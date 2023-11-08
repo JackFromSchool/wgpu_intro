@@ -1,4 +1,6 @@
 use winit::window::Window;
+use wgpu::util::DeviceExt;
+use crate::buffers::{ Vertex, TRIANGLE, PENTAGON, PENTAGON_INDICES};
 
 pub struct State {
     surface: wgpu::Surface,
@@ -8,6 +10,9 @@ pub struct State {
     clear_color: wgpu::Color,
     pub size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
     // Window must be after surface as surface
     // must first drop unsafe references to
     // window
@@ -47,7 +52,7 @@ impl State {
             },
             None,
         ).await.unwrap();
-
+        
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps.formats.iter()
             .copied()
@@ -80,7 +85,9 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[
+                    Vertex::desc(),
+                ],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -109,6 +116,24 @@ impl State {
             multiview: None,
         });
 
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(PENTAGON),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
+
+        let index_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(PENTAGON_INDICES),
+                usage: wgpu::BufferUsages::INDEX,
+            }
+        );
+
+        let num_indices = PENTAGON_INDICES.len() as u32;
+
         Self {
             window,
             surface,
@@ -117,6 +142,9 @@ impl State {
             config,
             size,
             render_pipeline,
+            vertex_buffer,
+            index_buffer,
+            num_indices,
             clear_color: wgpu::Color::BLUE,
         }
 
@@ -186,7 +214,9 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw(0..3, 0..1);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
